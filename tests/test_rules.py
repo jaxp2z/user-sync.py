@@ -1,50 +1,8 @@
 import mock
 import pytest
-import pytest
-import logging
-
+import re
 from user_sync.rules import RuleProcessor
 
-
-def test_log_after_mapping_hook_scope(log_stream):
-    stream, logger = log_stream
-
-    state = {
-        'source_attributes': {
-            'email': 'bsisko@seaofcarag.com',
-            'identity_type': None,
-            'username': None,
-            'domain': None,
-            'givenName': 'Benjamin',
-            'sn': 'Sisko',
-            'c': 'CA'},
-        'source_groups': set(),
-        'target_attributes': {
-            'email': 'bsisko@seaofcarag.com',
-            'username': 'bsisko@seaofcarag.com',
-            'domain': 'seaofcarag.com',
-            'firstname': 'Benjamin',
-            'lastname': 'Sisko',
-            'country': 'CA'},
-        'target_groups': set(),
-        'log_stream': logger,
-        'hook_storage': None}
-
-    ruleprocessor = RuleProcessor({})
-    ruleprocessor.logger = logger
-    ruleprocessor.after_mapping_hook_scope = state
-    ruleprocessor.log_after_mapping_hook_scope(before_call=True)
-
-    stream.flush()
-    x = stream.getvalue()
-
-    state['target_groups'] = {'One'}
-    state['target_attributes'] =  {'firstname' : 'John'}
-    state['source_attributes'] = {'sn': 'David'}
-    state['source_groups'] = {'One'}
-
-    ruleprocessor.after_mapping_hook_scope = state
-    ruleprocessor.log_after_mapping_hook_scope(after_call=True)
 
 @pytest.fixture
 def rule_processor(caller_options):
@@ -64,7 +22,7 @@ def caller_options():
             'adobe_users': ['all'], 'config_filename': 'tests/fixture/user-sync-config.yml',
             'connector': 'ldap', 'encoding_name': 'utf8', 'user_filter': None,
             'users': None, 'directory_connector_type': 'csv',
-            'directory_connector_overridden_options': {'file_path': '../tests/fixture/remove-data.csv'},
+            'directory_connector_overridden_options': {'file_path': ''},
             'adobe_group_mapped': False, 'additional_groups': []}
 
 
@@ -94,3 +52,80 @@ def test_stray_key_map(csv_reader, rule_processor):
                              'enterpriseID,removeuser3@example.com,': None,
                              'adobeID,removeuser2@example.com,': None}}
     assert expected_value == actual_value
+
+
+def test_log_after_mapping_hook_scope(log_stream):
+    stream, logger = log_stream
+
+    state = {
+        'source_attributes': {
+            'email': 'bsisko@example.com',
+            'identity_type': None,
+            'username': None,
+            'domain': None,
+            'givenName': 'Benjamin',
+            'sn': 'Sisko',
+            'c': 'CA'},
+        'source_groups': set(),
+        'target_attributes': {
+            'email': 'bsisko@example.com',
+            'username': 'bsisko@example.com',
+            'domain': 'example.com',
+            'firstname': 'Benjamin',
+            'lastname': 'Sisko',
+            'country': 'CA'},
+        'target_groups': set(),
+        'log_stream': logger,
+        'hook_storage': None}
+
+    ruleprocessor = RuleProcessor({})
+    ruleprocessor.logger = logger
+    ruleprocessor.after_mapping_hook_scope = state
+    ruleprocessor.log_after_mapping_hook_scope(before_call=True)
+
+    expected = """.
+Source attrs, before: {'email': 'bsisko@example.com', 'identity_type': None, 'username': None, 'domain': None, 'givenName': 'Benjamin', 'sn': 'Sisko', 'c': 'CA'}
+Source groups, before: set()
+Target attrs, before: {'email': 'bsisko@example.com', 'username': 'bsisko@example.com', 'domain': 'example.com', 'firstname': 'Benjamin', 'lastname': 'Sisko', 'country': 'CA'}
+Target groups, before: set()
+"""
+
+    expected = []
+    expected.append(["'email': 'bsisko@example.com'", "'identity_type': None", "'username': None", "'domain': None", "'givenName': 'Benjamin'", "'sn': 'Sisko'", "'c': 'CA'"])
+    expected.append("Source groups, before: set()")
+    expected.append(["'email': 'bsisko@example.com'", "'username': 'bsisko@example.com'", "'domain': 'example.com'", "'firstname': 'Benjamin'", "'lastname': 'Sisko'", "'country': 'CA'"])
+    expected.append("Target groups, before: set()")
+
+    stream.flush()
+    ac = stream.getvalue().split("\n")
+    zz = re.split('[{}]',ac[1])[1].split(",")
+
+    exc = expected[0].replace(" ", "")
+    acc = ac[1].replace(" ", "")
+
+    result = all(elem in expected[0] for elem in zz)
+
+
+
+    assert stream.getvalue() == expected
+
+    state['target_groups'] = {'One'}
+    state['target_attributes'] = {'firstname': 'John'}
+    state['source_attributes'] = {'sn': 'David'}
+    state['source_groups'] = {'One'}
+
+    ruleprocessor.after_mapping_hook_scope = state
+    ruleprocessor.log_after_mapping_hook_scope(after_call=True)
+
+    expected=""".
+Source attrs, before: {'email': 'bsisko@example.com', 'identity_type': None, 'username': None, 'domain': None, 'givenName': 'Benjamin', 'sn': 'Sisko', 'c': 'CA'}
+Source groups, before: set()
+Target attrs, before: {'email': 'bsisko@example.com', 'username': 'bsisko@example.com', 'domain': 'example.com', 'firstname': 'Benjamin', 'lastname': 'Sisko', 'country': 'CA'}
+Target groups, before: set()
+Target attrs, after: {'firstname': 'John'}
+Target groups, after: {'One'}
+Hook storage, after: None
+"""
+
+    stream.flush()
+    assert stream.getvalue() == expected
